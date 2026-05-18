@@ -9,7 +9,7 @@
 **声明：本项目代码完全由GPT-5.5生成**
 ## 功能特性
 
-![demo](asserts/demo.png)
+![demo](assets/demo.png)
 
 
 - 计划管理：支持待分配、按日期安排、DDL、长期目标、灵感胶囊等任务类型。
