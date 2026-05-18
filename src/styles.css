@@ -397,6 +397,9 @@ button {
 .composer input,
 .composer textarea,
 .composer select,
+.task-edit-field input,
+.task-edit-field textarea,
+.task-edit-field select,
 .background-control select,
 .search-box input,
 .timer-controls input {
@@ -1002,6 +1005,43 @@ h2 {
   font-size: 13px;
   line-height: 1.55;
   word-break: break-word;
+}
+
+.task-edit-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.task-edit-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.task-edit-field.is-wide {
+  grid-column: 1 / -1;
+}
+
+.task-edit-field input,
+.task-edit-field select {
+  width: 100%;
+  height: 34px;
+  padding: 0 9px;
+}
+
+.task-edit-field textarea {
+  width: 100%;
+  min-height: 68px;
+  resize: vertical;
+  padding: 8px 9px;
+}
+
+.task-edit-form .task-card__actions {
+  grid-column: 1 / -1;
 }
 
 mark {

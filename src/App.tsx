@@ -164,6 +164,15 @@ interface ComposerState {
   dueDate: string;
 }
 
+interface TaskEditDraft {
+  title: string;
+  detail: string;
+  type: TaskType;
+  groupId: string;
+  scheduledDate: string;
+  dueDate: string;
+}
+
 interface TimerState {
   duration: number;
   remaining: number;
@@ -807,13 +816,26 @@ function HighlightText({ text, extracted }: { text: string; extracted: Extracted
   );
 }
 
+function createTaskEditDraft(task: Task): TaskEditDraft {
+  return {
+    title: task.title,
+    detail: task.detail,
+    type: task.type,
+    groupId: task.groupId,
+    scheduledDate: task.scheduledDate ?? "",
+    dueDate: task.dueDate ?? ""
+  };
+}
+
 function TaskCard({
   task,
   group,
+  groups,
   selectedDate,
   isExpanded,
   onToggle,
   onExpand,
+  onUpdate,
   onDelete,
   onAssign,
   onDeadline,
@@ -821,10 +843,12 @@ function TaskCard({
 }: {
   task: Task;
   group?: Group;
+  groups: Group[];
   selectedDate: string;
   isExpanded: boolean;
   onToggle: (id: string) => void;
   onExpand: (id: string) => void;
+  onUpdate: (id: string, patch: Partial<Task>) => void;
   onDelete: (id: string) => void;
   onAssign: (id: string, date: string) => void;
   onDeadline: (id: string, date: string) => void;
@@ -832,6 +856,32 @@ function TaskCard({
 }) {
   const Icon = taskTypeMeta[task.type].icon;
   const isDone = task.status === "done";
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState<TaskEditDraft>(() => createTaskEditDraft(task));
+
+  useEffect(() => {
+    if (!isEditing) setDraft(createTaskEditDraft(task));
+  }, [isEditing, task]);
+
+  const saveEdit = (event: FormEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const title = draft.title.trim();
+    if (!title) return;
+    const detail = draft.detail.trim();
+    const extracted = parseTimeInfo(`${title} ${detail}`).items;
+
+    onUpdate(task.id, {
+      title,
+      detail,
+      type: draft.type,
+      groupId: draft.groupId || groups[0]?.id || task.groupId,
+      scheduledDate: draft.scheduledDate || undefined,
+      dueDate: draft.dueDate || undefined,
+      extracted
+    });
+    setIsEditing(false);
+  };
 
   return (
     <article
@@ -874,77 +924,169 @@ function TaskCard({
 
       {isExpanded && (
         <div className="task-detail-panel">
-          <div className="task-card__head">
-            <span className="task-card__type">
-              <Icon size={15} />
-              {taskTypeMeta[task.type].label}
-            </span>
-            <span className="group-pill" style={{ "--group-color": group?.color ?? "#94a3b8" } as CSSProperties}>
-              {group?.name ?? "未分组"}
-            </span>
-          </div>
-          {task.detail && (
-            <p>
-              <HighlightText text={task.detail} extracted={task.extracted} />
-            </p>
-          )}
-          <div className="time-chip-row">
-            {task.scheduledDate && <span className="time-chip">安排 {formatDateZh(task.scheduledDate)}</span>}
-            {task.dueDate && <span className="time-chip is-ddl">DDL {formatDateZh(task.dueDate)}</span>}
-            {task.extracted
-              .filter((item) => item.kind === "time")
-              .map((item) => (
-                <span className="time-chip" key={item.id}>
-                  {item.label}
+          {isEditing ? (
+            <form className="task-edit-form" onSubmit={saveEdit} onClick={(event) => event.stopPropagation()}>
+              <label className="task-edit-field is-wide">
+                <span>内容</span>
+                <input
+                  value={draft.title}
+                  onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="任务内容"
+                />
+              </label>
+              <label className="task-edit-field is-wide">
+                <span>备注</span>
+                <textarea
+                  value={draft.detail}
+                  onChange={(event) => setDraft((current) => ({ ...current, detail: event.target.value }))}
+                  placeholder="补充说明"
+                />
+              </label>
+              <label className="task-edit-field">
+                <span>类型</span>
+                <select
+                  value={draft.type}
+                  onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value as TaskType }))}
+                >
+                  {taskTypeIds.map((type) => (
+                    <option value={type} key={type}>
+                      {taskTypeMeta[type].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="task-edit-field">
+                <span>分组</span>
+                <select
+                  value={draft.groupId}
+                  onChange={(event) => setDraft((current) => ({ ...current, groupId: event.target.value }))}
+                >
+                  {groups.map((item) => (
+                    <option value={item.id} key={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="task-edit-field">
+                <span>安排日期</span>
+                <input
+                  type="date"
+                  value={draft.scheduledDate}
+                  onChange={(event) => setDraft((current) => ({ ...current, scheduledDate: event.target.value }))}
+                />
+              </label>
+              <label className="task-edit-field">
+                <span>DDL 日期</span>
+                <input
+                  type="date"
+                  value={draft.dueDate}
+                  onChange={(event) => setDraft((current) => ({ ...current, dueDate: event.target.value }))}
+                />
+              </label>
+              <footer className="task-card__actions">
+                <button className="icon-btn strong" type="submit" title="保存修改">
+                  <Save size={16} />
+                </button>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  title="取消编辑"
+                  onClick={() => {
+                    setDraft(createTaskEditDraft(task));
+                    setIsEditing(false);
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              </footer>
+            </form>
+          ) : (
+            <>
+              <div className="task-card__head">
+                <span className="task-card__type">
+                  <Icon size={15} />
+                  {taskTypeMeta[task.type].label}
                 </span>
-              ))}
-          </div>
-          <footer className="task-card__actions">
-            <button
-              className="icon-btn"
-              type="button"
-              title="安排到选中日期"
-              onClick={(event) => {
-                event.stopPropagation();
-                onAssign(task.id, selectedDate);
-              }}
-            >
-              <CalendarCheck size={16} />
-            </button>
-            <button
-              className="icon-btn"
-              type="button"
-              title="设为选中日期 DDL"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDeadline(task.id, selectedDate);
-              }}
-            >
-              <Flag size={16} />
-            </button>
-            <button
-              className="icon-btn"
-              type="button"
-              title="移回待分配"
-              onClick={(event) => {
-                event.stopPropagation();
-                onInbox(task.id);
-              }}
-            >
-              <Archive size={16} />
-            </button>
-            <button
-              className="icon-btn danger"
-              type="button"
-              title="删除"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete(task.id);
-              }}
-            >
-              <Trash2 size={16} />
-            </button>
-          </footer>
+                <span className="group-pill" style={{ "--group-color": group?.color ?? "#94a3b8" } as CSSProperties}>
+                  {group?.name ?? "未分组"}
+                </span>
+              </div>
+              {task.detail && (
+                <p>
+                  <HighlightText text={task.detail} extracted={task.extracted} />
+                </p>
+              )}
+              <div className="time-chip-row">
+                {task.scheduledDate && <span className="time-chip">安排 {formatDateZh(task.scheduledDate)}</span>}
+                {task.dueDate && <span className="time-chip is-ddl">DDL {formatDateZh(task.dueDate)}</span>}
+                {task.extracted
+                  .filter((item) => item.kind === "time")
+                  .map((item) => (
+                    <span className="time-chip" key={item.id}>
+                      {item.label}
+                    </span>
+                  ))}
+              </div>
+              <footer className="task-card__actions">
+                <button
+                  className="icon-btn strong"
+                  type="button"
+                  title="编辑任务"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsEditing(true);
+                  }}
+                >
+                  <Pencil size={16} />
+                </button>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  title="安排到选中日期"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onAssign(task.id, selectedDate);
+                  }}
+                >
+                  <CalendarCheck size={16} />
+                </button>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  title="设为选中日期 DDL"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeadline(task.id, selectedDate);
+                  }}
+                >
+                  <Flag size={16} />
+                </button>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  title="移回待分配"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onInbox(task.id);
+                  }}
+                >
+                  <Archive size={16} />
+                </button>
+                <button
+                  className="icon-btn danger"
+                  type="button"
+                  title="删除"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDelete(task.id);
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </footer>
+            </>
+          )}
         </div>
       )}
     </article>
@@ -1586,10 +1728,12 @@ function MainApp() {
         key={task.id}
         task={task}
         group={groupById.get(task.groupId)}
+        groups={state.groups}
         selectedDate={selectedDate}
         isExpanded={Boolean(expandedTaskIds[task.id])}
         onExpand={toggleTaskDetails}
         onToggle={(id) => updateTask(id, (item) => ({ ...item, status: item.status === "done" ? "active" : "done" }))}
+        onUpdate={(id, patch) => updateTask(id, (item) => ({ ...item, ...patch }))}
         onDelete={(id) =>
           setState((current) => ({ ...current, tasks: current.tasks.filter((item) => item.id !== id) }))
         }
