@@ -583,6 +583,55 @@ h1 {
   line-height: 1.05;
 }
 
+.focus-date-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.focus-date-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  text-align: left;
+}
+
+.focus-date-button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.focus-date-button svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.focus-date-button:hover span {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 5px;
+}
+
+.focus-date-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.focus-date-input {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 h2 {
   margin: 0;
   font-size: 17px;

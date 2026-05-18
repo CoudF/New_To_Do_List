@@ -1133,6 +1133,7 @@ function MainApp() {
     origin: StickyState;
   }>(null);
   const stickyRef = useRef<HTMLDivElement | null>(null);
+  const selectedDateInputRef = useRef<HTMLInputElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const backgroundInputRef = useRef<HTMLInputElement | null>(null);
   const skipNextSaveRef = useRef(false);
@@ -1290,6 +1291,21 @@ function MainApp() {
 
   const updatePrefs = (patch: Partial<Preferences>) => {
     setState((current) => ({ ...current, prefs: { ...current.prefs, ...patch } }));
+  };
+
+  const selectDate = (iso: string) => {
+    if (!iso) return;
+    updatePrefs({ selectedDate: iso });
+    setCalendarCursor(fromISODate(iso));
+  };
+
+  const openSelectedDatePicker = () => {
+    const input = selectedDateInputRef.current;
+    if (!input) return;
+    input.focus();
+    const picker = input as HTMLInputElement & { showPicker?: () => void };
+    if (typeof picker.showPicker === "function") picker.showPicker();
+    else input.click();
   };
 
   const toggleToolPanel = (panel: DockPanel) => {
@@ -2184,9 +2200,27 @@ function MainApp() {
 
       <main className="main-stage">
         <header className="top-bar">
-          <div>
+          <div className="focus-date-shell">
             <p className="eyebrow">当前焦点</p>
-            <h1>{formatLongDateZh(selectedDate)}</h1>
+            <h1>
+              <button
+                className="focus-date-button"
+                type="button"
+                title="切换当前焦点日期"
+                onClick={openSelectedDatePicker}
+              >
+                <span>{formatLongDateZh(selectedDate)}</span>
+                <CalendarDays size={20} />
+              </button>
+            </h1>
+            <input
+              ref={selectedDateInputRef}
+              className="focus-date-input"
+              type="date"
+              value={selectedDate}
+              aria-label="选择当前焦点日期"
+              onChange={(event) => selectDate(event.target.value)}
+            />
           </div>
           <div className="top-tools">
             <label className="search-box">
