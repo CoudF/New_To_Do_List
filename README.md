@@ -3,7 +3,9 @@
 星轨清单是一个面向 Ubuntu 桌面的创意型 To Do List。它把传统清单、日历、DDL、长期目标、灵感记录、番茄钟和桌面便签组合成一个更活跃的个人计划工作台。
 
 数据默认保存在本机 `localStorage`，不依赖后端服务；桌面版基于 Electron，可通过脚本一键启动。
+
 项目创作原因：本人在使用各种To Do List类的软件过程中，深觉其功能冗杂，UI界面不适合，设计过于传统，部分功能需付费，仅支持Win/Mac。故借助AI开发了这款适合个人使用的To Do List。
+
 **声明：本项目代码完全由GPT-5.5生成**
 ## 功能特性
 
@@ -93,25 +95,6 @@ chmod +x install_desktop_launcher.sh
 ├── install_desktop_launcher.sh # 安装桌面入口脚本
 ├── package.json
 └── vite.config.ts
-```
-
-## 发布到 GitHub
-
-创建远程仓库后，在本地执行：
-
-```bash
-git remote add origin https://github.com/<your-name>/<your-repo>.git
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git push -u origin main
-```
-
-如果是第一次使用 Git，需要先配置提交身份：
-
-```bash
-git config --global user.name "Your Name"
-git config --global user.email "you@example.com"
 ```
 
 ## 后续发布方向
