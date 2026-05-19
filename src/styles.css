@@ -769,6 +769,15 @@ h2 {
 
 .task-column {
   min-width: 0;
+  border-radius: var(--radius);
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.task-column.is-drop-ready {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .section-title {
@@ -869,6 +878,24 @@ h2 {
   border-radius: var(--radius);
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   cursor: pointer;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.task-card[draggable="true"] {
+  cursor: grab;
+}
+
+.task-card[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.task-card.is-dragging {
+  opacity: 0.48;
+  transform: scale(0.985);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
 }
 
 .task-card.is-done {

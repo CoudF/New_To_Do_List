@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, CSSProperties, FormEvent, ReactNode } from "react";
+import type { ChangeEvent, CSSProperties, DragEvent, FormEvent, ReactNode } from "react";
 
 type TaskType = "inbox" | "scheduled" | "deadline" | "longterm" | "idea";
 type TaskStatus = "active" | "done";
@@ -44,6 +44,7 @@ type ThemeId = "arcade" | "sunrise" | "paper" | "midnight" | "custom";
 type TextureId = "grid" | "tape" | "spark" | "wave";
 type DockPanel = "calendar" | "timer" | "today";
 type BackgroundMode = "cover" | "contain" | "stretch" | "tile";
+type TaskSectionId = "inbox" | "selected-date" | "deadline" | "longterm" | "idea";
 
 interface ExtractedTime {
   id: string;
@@ -771,8 +772,43 @@ function getDailyQuote() {
   return quotes[seed % quotes.length];
 }
 
+function orderTasksForDisplay(tasks: Task[]) {
+  return [...tasks].sort((left, right) => {
+    if (left.status === right.status) return 0;
+    return left.status === "done" ? 1 : -1;
+  });
+}
+
 function getTodayTasks(tasks: Task[], today: string) {
-  return tasks.filter((task) => task.scheduledDate === today || task.dueDate === today).slice(0, 8);
+  return orderTasksForDisplay(tasks.filter((task) => task.scheduledDate === today || task.dueDate === today)).slice(0, 8);
+}
+
+function taskBelongsToSection(task: Task, sectionId: TaskSectionId, selectedDate: string) {
+  if (sectionId === "inbox") return task.type === "inbox" && !task.scheduledDate && !task.dueDate;
+  if (sectionId === "selected-date") return task.scheduledDate === selectedDate || task.dueDate === selectedDate;
+  if (sectionId === "deadline") return Boolean(task.dueDate);
+  if (sectionId === "longterm") return task.type === "longterm";
+  return task.type === "idea";
+}
+
+function moveTaskIntoSection(task: Task, sectionId: TaskSectionId, selectedDate: string): Task {
+  if (sectionId === "inbox") {
+    return { ...task, type: "inbox", scheduledDate: undefined, dueDate: undefined };
+  }
+  if (sectionId === "selected-date") {
+    return { ...task, type: "scheduled", scheduledDate: selectedDate, dueDate: undefined };
+  }
+  if (sectionId === "deadline") {
+    return { ...task, type: "deadline", scheduledDate: undefined, dueDate: selectedDate };
+  }
+  if (sectionId === "longterm") {
+    return { ...task, type: "longterm", scheduledDate: undefined, dueDate: undefined };
+  }
+  return { ...task, type: "idea", scheduledDate: undefined, dueDate: undefined };
+}
+
+function getDraggedTaskId(event: DragEvent<HTMLElement>) {
+  return event.dataTransfer.getData("application/x-orbit-task") || event.dataTransfer.getData("text/plain");
 }
 
 function isStickyWindowMode() {
@@ -831,21 +867,30 @@ function TaskCard({
   task,
   group,
   groups,
+  sectionId,
   selectedDate,
   isExpanded,
+  isDragging,
+  draggingTaskId,
   onToggle,
   onExpand,
   onUpdate,
   onDelete,
   onAssign,
   onDeadline,
-  onInbox
+  onInbox,
+  onDragStart,
+  onDragEnd,
+  onDropOnTask
 }: {
   task: Task;
   group?: Group;
   groups: Group[];
+  sectionId: TaskSectionId;
   selectedDate: string;
   isExpanded: boolean;
+  isDragging: boolean;
+  draggingTaskId: string | null;
   onToggle: (id: string) => void;
   onExpand: (id: string) => void;
   onUpdate: (id: string, patch: Partial<Task>) => void;
@@ -853,6 +898,9 @@ function TaskCard({
   onAssign: (id: string, date: string) => void;
   onDeadline: (id: string, date: string) => void;
   onInbox: (id: string) => void;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+  onDropOnTask: (dragTaskId: string, targetTaskId: string, sectionId: TaskSectionId) => void;
 }) {
   const Icon = taskTypeMeta[task.type].icon;
   const isDone = task.status === "done";
@@ -887,10 +935,35 @@ function TaskCard({
     <article
       className={`task-card texture-${group?.texture ?? "grid"} ${isDone ? "is-done" : ""} ${
         isExpanded ? "is-expanded" : ""
-      }`}
+      } ${isDragging ? "is-dragging" : ""}`}
+      draggable={!isEditing}
       role="button"
       tabIndex={0}
       onClick={() => onExpand(task.id)}
+      onDragStart={(event) => {
+        if (isEditing) {
+          event.preventDefault();
+          return;
+        }
+        event.stopPropagation();
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-orbit-task", task.id);
+        event.dataTransfer.setData("text/plain", task.id);
+        onDragStart(task.id);
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={(event) => {
+        if (!draggingTaskId || draggingTaskId === task.id) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(event) => {
+        const draggedTaskId = getDraggedTaskId(event);
+        if (!draggedTaskId || draggedTaskId === task.id) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onDropOnTask(draggedTaskId, task.id, sectionId);
+      }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
@@ -1094,20 +1167,39 @@ function TaskCard({
 }
 
 function TaskColumn({
+  sectionId,
   title,
   icon: Icon,
   tasks,
   empty,
+  draggingTaskId,
+  onColumnDrop,
   children
 }: {
+  sectionId: TaskSectionId;
   title: string;
   icon: LucideIcon;
   tasks: Task[];
   empty: string;
+  draggingTaskId: string | null;
+  onColumnDrop: (dragTaskId: string, sectionId: TaskSectionId) => void;
   children: ReactNode;
 }) {
   return (
-    <section className="task-column">
+    <section
+      className={`task-column ${draggingTaskId ? "is-drop-ready" : ""}`}
+      onDragOver={(event) => {
+        if (!draggingTaskId) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(event) => {
+        const draggedTaskId = getDraggedTaskId(event);
+        if (!draggedTaskId) return;
+        event.preventDefault();
+        onColumnDrop(draggedTaskId, sectionId);
+      }}
+    >
       <header className="section-title">
         <span>
           <Icon size={18} />
@@ -1263,6 +1355,7 @@ function MainApp() {
   const [editingGroup, setEditingGroup] = useState<null | { id: string; name: string; color: string }>(null);
   const [pendingDeleteGroupId, setPendingDeleteGroupId] = useState<string | null>(null);
   const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({});
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
   const [calendarCursor, setCalendarCursor] = useState(() => fromISODate(initialLoad.state.prefs.selectedDate));
@@ -1419,15 +1512,15 @@ function MainApp() {
       });
   }, [groupFilter, search, state.tasks]);
 
-  const unassignedTasks = visibleTasks.filter((task) => task.type === "inbox" && !task.scheduledDate && !task.dueDate);
-  const selectedDateTasks = visibleTasks.filter(
-    (task) => task.scheduledDate === selectedDate || task.dueDate === selectedDate
+  const unassignedTasks = orderTasksForDisplay(
+    visibleTasks.filter((task) => task.type === "inbox" && !task.scheduledDate && !task.dueDate)
   );
-  const deadlineTasks = visibleTasks
-    .filter((task) => task.dueDate)
-    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
-  const longTermTasks = visibleTasks.filter((task) => task.type === "longterm");
-  const ideaTasks = visibleTasks.filter((task) => task.type === "idea");
+  const selectedDateTasks = orderTasksForDisplay(
+    visibleTasks.filter((task) => task.scheduledDate === selectedDate || task.dueDate === selectedDate)
+  );
+  const deadlineTasks = orderTasksForDisplay(visibleTasks.filter((task) => task.dueDate));
+  const longTermTasks = orderTasksForDisplay(visibleTasks.filter((task) => task.type === "longterm"));
+  const ideaTasks = orderTasksForDisplay(visibleTasks.filter((task) => task.type === "idea"));
   const currentTasks = useMemo(() => getTodayTasks(state.tasks, today), [state.tasks, today]);
   const isDesktopApp = Boolean(window.orbitDesktop?.isElectron);
 
@@ -1488,6 +1581,35 @@ function MainApp() {
         task.id === taskId ? { ...updater(task), updatedAt: new Date().toISOString() } : task
       )
     }));
+  };
+
+  const moveTask = (dragTaskId: string, sectionId: TaskSectionId, beforeTaskId?: string) => {
+    setState((current) => {
+      const draggedTask = current.tasks.find((task) => task.id === dragTaskId);
+      if (!draggedTask) return current;
+
+      const selected = current.prefs.selectedDate;
+      const targetTask = beforeTaskId ? current.tasks.find((task) => task.id === beforeTaskId) : undefined;
+      const shouldConvert = !taskBelongsToSection(draggedTask, sectionId, selected);
+      const convertedTask = shouldConvert ? moveTaskIntoSection(draggedTask, sectionId, selected) : draggedTask;
+      const movedTask = {
+        ...convertedTask,
+        groupId: targetTask?.groupId ?? convertedTask.groupId,
+        updatedAt: new Date().toISOString()
+      };
+      const remainingTasks = current.tasks.filter((task) => task.id !== dragTaskId);
+      const targetIndex = beforeTaskId
+        ? remainingTasks.findIndex((task) => task.id === beforeTaskId)
+        : remainingTasks.reduce(
+            (lastIndex, task, index) => (taskBelongsToSection(task, sectionId, selected) ? index + 1 : lastIndex),
+            remainingTasks.length
+          );
+      const insertIndex = targetIndex >= 0 ? targetIndex : remainingTasks.length;
+      const tasks = [...remainingTasks];
+      tasks.splice(insertIndex, 0, movedTask);
+      return { ...current, tasks };
+    });
+    setDraggingTaskId(null);
   };
 
   useEffect(() => {
@@ -1722,15 +1844,18 @@ function MainApp() {
     }
   };
 
-  const renderTaskCards = (tasks: Task[]) =>
+  const renderTaskCards = (sectionId: TaskSectionId, tasks: Task[]) =>
     tasks.map((task) => (
       <TaskCard
         key={task.id}
         task={task}
         group={groupById.get(task.groupId)}
         groups={state.groups}
+        sectionId={sectionId}
         selectedDate={selectedDate}
         isExpanded={Boolean(expandedTaskIds[task.id])}
+        isDragging={draggingTaskId === task.id}
+        draggingTaskId={draggingTaskId}
         onExpand={toggleTaskDetails}
         onToggle={(id) => updateTask(id, (item) => ({ ...item, status: item.status === "done" ? "active" : "done" }))}
         onUpdate={(id, patch) => updateTask(id, (item) => ({ ...item, ...patch }))}
@@ -1742,10 +1867,13 @@ function MainApp() {
         onInbox={(id) =>
           updateTask(id, (item) => ({ ...item, type: "inbox", scheduledDate: undefined, dueDate: undefined }))
         }
+        onDragStart={setDraggingTaskId}
+        onDragEnd={() => setDraggingTaskId(null)}
+        onDropOnTask={(dragTaskId, targetTaskId, targetSectionId) => moveTask(dragTaskId, targetSectionId, targetTaskId)}
       />
     ));
 
-  const renderGroupedTaskCards = (sectionId: string, tasks: Task[]) => {
+  const renderGroupedTaskCards = (sectionId: TaskSectionId, tasks: Task[]) => {
     const groupsWithTasks = state.groups
       .map((group) => ({
         group,
@@ -1782,7 +1910,7 @@ function MainApp() {
                   {groupTasks.length} 项{doneCount ? ` · ${doneCount} 完成` : ""}
                 </small>
               </button>
-              {!isCollapsed && <div className="task-group__body">{renderTaskCards(groupTasks)}</div>}
+              {!isCollapsed && <div className="task-group__body">{renderTaskCards(sectionId, groupTasks)}</div>}
             </section>
           );
         })}
@@ -2460,32 +2588,62 @@ function MainApp() {
 
         <div className="work-grid">
           <TaskColumn
+            sectionId="inbox"
             title="待分配"
             icon={Inbox}
             tasks={unassignedTasks}
             empty="这里会收纳还没有安排日期的计划。"
+            draggingTaskId={draggingTaskId}
+            onColumnDrop={moveTask}
           >
             {renderGroupedTaskCards("inbox", unassignedTasks)}
           </TaskColumn>
 
           <TaskColumn
+            sectionId="selected-date"
             title={formatDateZh(selectedDate)}
             icon={CalendarCheck}
             tasks={selectedDateTasks}
             empty="选中日期暂时没有计划。"
+            draggingTaskId={draggingTaskId}
+            onColumnDrop={moveTask}
           >
             {renderGroupedTaskCards("selected-date", selectedDateTasks)}
           </TaskColumn>
 
-          <TaskColumn title="DDL" icon={Flag} tasks={deadlineTasks} empty="没有正在追踪的 DDL。">
+          <TaskColumn
+            sectionId="deadline"
+            title="DDL"
+            icon={Flag}
+            tasks={deadlineTasks}
+            empty="没有正在追踪的 DDL。"
+            draggingTaskId={draggingTaskId}
+            onColumnDrop={moveTask}
+          >
             {renderGroupedTaskCards("deadline", deadlineTasks)}
           </TaskColumn>
 
-          <TaskColumn title="长期目标" icon={Target} tasks={longTermTasks} empty="长期目标会在这里沉淀。">
+          <TaskColumn
+            sectionId="longterm"
+            title="长期目标"
+            icon={Target}
+            tasks={longTermTasks}
+            empty="长期目标会在这里沉淀。"
+            draggingTaskId={draggingTaskId}
+            onColumnDrop={moveTask}
+          >
             {renderGroupedTaskCards("longterm", longTermTasks)}
           </TaskColumn>
 
-          <TaskColumn title="灵感胶囊" icon={Lightbulb} tasks={ideaTasks} empty="新奇想法会在这里发芽。">
+          <TaskColumn
+            sectionId="idea"
+            title="灵感胶囊"
+            icon={Lightbulb}
+            tasks={ideaTasks}
+            empty="新奇想法会在这里发芽。"
+            draggingTaskId={draggingTaskId}
+            onColumnDrop={moveTask}
+          >
             {renderGroupedTaskCards("idea", ideaTasks)}
           </TaskColumn>
         </div>
